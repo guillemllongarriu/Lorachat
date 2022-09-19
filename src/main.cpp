@@ -24,7 +24,8 @@ BluetoothSerial SerialBT;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 
-LoraMesher* radio;
+LoraMesher& radio = LoraMesher::getInstance();
+
 
 #define datalength 190  
 #define reqack "ack"
@@ -89,13 +90,13 @@ void searchcontacts(){
     
     
     helloPacket->type=searchreq;
-    radio->createPacketAndSend(BROADCAST_ADDR, helloPacket, 1);
+    radio.createPacketAndSend(BROADCAST_ADDR, helloPacket, 1);
 }
 
 
 
-void tractarPacket(LoraMesher::packet<dataPacket>* packet) {
-    dataPacket* dp=radio->getPayload(packet);
+void tractarPacket(LoraMesher::userPacket<dataPacket>* packet) {
+    dataPacket* dp=packet->payload;
     
     Serial.println(dp->data);
     Serial.println(dp->type);
@@ -105,7 +106,7 @@ void tractarPacket(LoraMesher::packet<dataPacket>* packet) {
         
         ack->type=searchack;
         strcpy(ack->data, myname);
-        radio->createPacketAndSend(packet->src, ack, 1);
+        radio.createPacketAndSend(packet->src, ack, 1);
         
     }
     else if(dp->type==searchack){
@@ -142,7 +143,7 @@ void tractarPacket(LoraMesher::packet<dataPacket>* packet) {
             else{//data==ack
                 dataPacket* fichat= new dataPacket();
                 fichat->type=chatack;
-                radio->createPacketAndSend(packet->src, fichat, 1);
+                radio.createPacketAndSend(packet->src, fichat, 1);
             }
 
         }
@@ -151,7 +152,7 @@ void tractarPacket(LoraMesher::packet<dataPacket>* packet) {
                 dataPacket* ack= new dataPacket();
                 strcpy(ack->data, reqack);
                 ack->type=chatreq;
-                radio->createPacketAndSend(packet->src, ack, 1);
+                radio.createPacketAndSend(packet->src, ack, 1);
             }
             else if(!strcmp(dp->data,reqack) && istartchat){
                 mode=chat;
@@ -161,14 +162,14 @@ void tractarPacket(LoraMesher::packet<dataPacket>* packet) {
                 mode=setuptime;
                 dataPacket* fichat= new dataPacket();
                 fichat->type=chatack;
-                radio->createPacketAndSend(packet->src, fichat, 1);
+                radio.createPacketAndSend(packet->src, fichat, 1);
             }
         }
         else if(packet->src!=chataddres){
             Serial.println("mode: someone tring to start chat with me but i am busy with someone else");
             dataPacket* chatackpacket= new dataPacket();
             chatackpacket->type=chatack;
-            radio->createPacketAndSend(packet->src, chatackpacket, 1);
+            radio.createPacketAndSend(packet->src, chatackpacket, 1);
         }
 
     }
@@ -182,6 +183,7 @@ void tractarPacket(LoraMesher::packet<dataPacket>* packet) {
         SerialBT.println((String)chataddres +": "+ dp->data );
         
     }
+    
 }
 
 
@@ -198,21 +200,21 @@ void processReceivedPackets(void*) {
         led_Flash(1, 100); //one quick LED flashes to indicate a packet has arrived
 
         //Iterate through all the packets inside the Received User Packets FiFo
-        while (radio->ReceivedUserPackets->Size() > 0) {
+        while (radio.getReceivedQueueSize() > 0) {
             Log.trace(F("ReceivedUserData_TaskHandle notify received" CR));
-            Log.trace(F("Fifo receiveUserData size: %d" CR), radio->ReceivedUserPackets->Size());
+            Log.trace(F("Fifo receiveUserData size: %d" CR), radio.getReceivedQueueSize());
 
             //Get the first element inside the Received User Packets FiFo
-            LoraMesher::packetQueue <dataPacket>* helloReceived = radio->ReceivedUserPackets->Pop<dataPacket>();
+            LoraMesher::userPacket<dataPacket>* userp = radio.getNextUserPacket<dataPacket>();
 
             //Print the data packet
             char buf[128];
-            sprintf(buf,"----paquet regut de: %i a: %i size: %i",helloReceived->packet->src,  helloReceived->packet->dst,helloReceived->packet->payloadSize);
+            sprintf(buf,"----paquet rebut de: %i a: %i size: %i",userp->src,  userp->dst,userp->payloadSize);
             Serial.println(buf);
-            tractarPacket(helloReceived->packet);
+            tractarPacket(userp);
             
             //Delete the packet when used. It is very important to delete the packets.
-            delete helloReceived;
+            radio.deletePacket(userp);
         }
     }
 }
@@ -220,7 +222,7 @@ void processReceivedPackets(void*) {
 void setupLoraMesher() {
 
     //Create a loramesher with a processReceivedPackets function
-    radio = new LoraMesher(processReceivedPackets);
+   radio.init(processReceivedPackets);
 
     Serial.println("Lora initialized");
 }
@@ -273,7 +275,7 @@ void callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param){
         display.setCursor(0,0);
         display.print("BT client connected");
         display.setCursor(0,10);
-        display.print("LoRa BT addrs: "+(String)radio->getLocalAddress());
+        display.print("LoRa BT addrs: "+(String)radio.getLocalAddress());
         display.setCursor(0,20);
         display.print("Last message from BT:");
         display.setCursor(0,30);
@@ -286,13 +288,13 @@ void callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param){
             mode=setuptime;
             dataPacket* fichat= new dataPacket();
             fichat->type=chatack;
-            radio->createPacketAndSend(chataddres, fichat, 1);
+            radio.createPacketAndSend(chataddres, fichat, 1);
         }
         display.clearDisplay();
         display.setCursor(0,0);
         display.print("BTclient disconnected");
         display.setCursor(0,10);
-        display.print("LoRa BT addrs: "+(String)radio->getLocalAddress());
+        display.print("LoRa BT addrs: "+(String)radio.getLocalAddress());
         display.setCursor(0,20);
         display.print("waiting for a BT client to connect");
         //display.display();
@@ -336,7 +338,7 @@ void setup() {
     display.display();
 
     SerialBT.register_callback(callback);
-    if(!SerialBT.begin((String)radio->getLocalAddress())){
+    if(!SerialBT.begin((String)radio.getLocalAddress())){
         Serial.println("BT init error");
         display.setCursor(0,20);
         display.print("BT init error");
@@ -347,7 +349,7 @@ void setup() {
     display.setCursor(0,20);
     display.print("BT Initializing OK!");
     display.setCursor(0,30);
-    display.print("LoRa BT addrs: "+(String)radio->getLocalAddress());
+    display.print("LoRa BT addrs: "+(String)radio.getLocalAddress());
     display.setCursor(0,40);
     display.print("waiting for a BT client to connect");
     display.display();
@@ -400,11 +402,11 @@ void loop() {
 
                     if(i==256)SerialBT.println("this address: " + addr +" is not in contacts");
                     else{
-                        if(radio->hasAddresRoutingTable(contacts[i].addres)){
+                        if(radio.hasAddressRoutingTable(contacts[i].addres)){
                             dataPacket* chatreqpacket= new dataPacket();
                             strcpy(chatreqpacket->data, reqstart);
                             chatreqpacket->type=chatreq;
-                            radio->createPacketAndSend(contacts[i].addres, chatreqpacket, 1);
+                            radio.createPacketAndSend(contacts[i].addres, chatreqpacket, 1);
                             SerialBT.println("tring to start chat with address: "+ addr + " name: "+contacts[i].name);
                             mode=handshake;
                             istartchat=true;
@@ -440,7 +442,7 @@ void loop() {
                     SerialBT.println("starting chat with(exit to end chat): " + (String)chataddres );
 
                 }
-                radio->createPacketAndSend(chataddres, chatreqpacket, 1);
+                radio.createPacketAndSend(chataddres, chatreqpacket, 1);
 
                
                         
@@ -456,7 +458,7 @@ void loop() {
                 dataPacket* fichat= new dataPacket();
                 
                 fichat->type=chatack;
-                radio->createPacketAndSend(chataddres, fichat, 1);
+                radio.createPacketAndSend(chataddres, fichat, 1);
             }
             else{
                 int i=0;
@@ -468,7 +470,7 @@ void loop() {
                     message.substring(i*(datalength-1),(i+1)*(datalength-1)).toCharArray(buf,datalength);
                     strcpy(chatmes->data, buf);
                     chatmes->type=chatmessage;
-                    radio->createPacketAndSend(chataddres, chatmes, 1);
+                    radio.createPacketAndSend(chataddres, chatmes, 1);
                     ++i;
                 }
 
