@@ -14,11 +14,19 @@
 #include <Adafruit_SSD1306.h>
 
 //OLED pins
-#define OLED_SDA 4
-#define OLED_SCL 15 
-#define OLED_RST 16
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+#ifndef OLED_SDA
+#define OLED_SDA SDA
+#endif
+#ifndef OLED_SCL
+#define OLED_SCL SCL
+#endif
+
+#ifndef OLED_RST
+#define OLED_RST -1
+#endif
 
 BluetoothSerial SerialBT;
 
@@ -302,7 +310,7 @@ void callback(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         display.print("Last message from BT:");
         display.setCursor(0, 30);
         display.print("<no message reseived yet>");
-        //display.display();
+        display.display();
     }
     else if (event == ESP_SPP_CLOSE_EVT && !SerialBT.hasClient()) {
         hasbtclient = false;
@@ -319,44 +327,28 @@ void callback(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         display.print("LoRa BT addrs: " + (String) radio.getLocalAddress());
         display.setCursor(0, 20);
         display.print("waiting for a BT client to connect");
-        //display.display();
+        display.display();
     }
 }
 
-void setup() {
-    //initialize Serial Monitor
-    Serial.begin(115200);
-
-    //reset OLED display via software
-    pinMode(OLED_RST, OUTPUT);
-    digitalWrite(OLED_RST, LOW);
-    delay(20);
-    digitalWrite(OLED_RST, HIGH);
+void initDisplay() {
+    if (OLED_RST != -1) {
+        pinMode(OLED_RST, OUTPUT);
+        digitalWrite(OLED_RST, LOW);
+        delay(20);
+        digitalWrite(OLED_RST, HIGH);
+    }
 
     //initialize OLED
-    Wire.begin(OLED_SDA, OLED_SCL);
+    Wire.begin((int) OLED_SDA, (int) OLED_SCL);
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3c, false, false)) { // Address 0x3C for 128x32
         Serial.println(F("SSD1306 allocation failed"));
         for (;;); // Don't proceed, loop forever
     }
 
-    display.clearDisplay();
-    display.setTextColor(WHITE);
-    display.setTextSize(1);
-    display.setCursor(0, 0);
-    display.print("mesherselect project");
-    display.display();
+}
 
-    Serial.println("mesherselect project");
-
-
-    setupLoraMesher();
-
-    Serial.println("LoRa Initializing OK!");
-    display.setCursor(0, 10);
-    display.print("LoRa Initializing OK!");
-    display.display();
-
+void initBluetooth() {
     SerialBT.register_callback(callback);
     if (!SerialBT.begin((String) radio.getLocalAddress())) {
         Serial.println("BT init error");
@@ -365,6 +357,21 @@ void setup() {
         display.display();
         for (;;);
     }
+}
+
+void setInitialScreen() {
+    display.clearDisplay();
+    display.setTextColor(WHITE);
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.print("mesherselect project");
+
+    Serial.println("mesherselect project");
+
+    Serial.println("LoRa Initializing OK!");
+    display.setCursor(0, 10);
+    display.print("LoRa Initializing OK!");
+
     Serial.println("BT Initializing OK!");
     display.setCursor(0, 20);
     display.print("BT Initializing OK!");
@@ -373,8 +380,21 @@ void setup() {
     display.setCursor(0, 40);
     display.print("waiting for a BT client to connect");
     display.display();
-    delay(2000);
+}
 
+void setup() {
+    //initialize Serial Monitor
+    Serial.begin(115200);
+
+    initDisplay();
+
+    setupLoraMesher();
+
+    initBluetooth();
+
+    setInitialScreen();
+
+    delay(2000);
 }
 
 
